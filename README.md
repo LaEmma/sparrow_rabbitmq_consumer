@@ -19,7 +19,9 @@ Here is the most simple example of use
 ```
 pip install sparrow_rabbitmq_consumer
 from rabbitmq_consumer import RabbitMQConsumer
+
 rabbitmq_config = {
+    "NAME": "rabbitmq-svc"
     "HOST": "127.0.0.1",
     "PORT": "5672",
     "API_PORT": "15672",
@@ -27,14 +29,47 @@ rabbitmq_config = {
     "PASSWORD": "12345",
     "VHOST": None
 }
-task_api = "http://127.0.0.1:8001/api/"
+
+task_api_config = {
+    "NAME": "sparrow-task-test-svc",
+    "HOST": "127.0.0.1",
+    "PORT": "8001",
+    "UPDATE_TASK_API": '/api/sparrow_task/task/update/'
+}
+
+
 consumer = RabbitMQConsumer(
     queue="product", 
     task_file="task_folders.sparrow_products_tasks", 
     rabbitmq_config=rabbitmq_config,
     update_task=True,
-    task_api=task_api
+    task_api_config=task_api_config
 )
 consumer.consume()
 
+参数说明：
+    rabbitmq_config和task_api_config为非必填，未设置的话会使用默认值，默认HOST均为127.0.0.1
+    
+    rabbitmq_config：
+        {
+            "NAME": "rabbitmq-svc"
+            "HOST": "127.0.0.1",
+            "PORT": "5672",
+            "API_PORT": "15672",
+            "USER": "admin",
+            "PASSWORD": "12345",
+            "VHOST": None
+        }
+        如果参数里传了NAME, 会把NAME作为rabbitmq服务的名称，以服务发现的方式获取HOST。如果服务发现未找到该服务则会使用参数里的HOST的值。
+    
+    task_api_config： 
+        {
+            "NAME": "sparrow-task-test-svc",
+            "HOST": "127.0.0.1",
+            "PORT": "8001",
+            "UPDATE_TASK_API": '/api/sparrow_task/task/update/'
+        }
+        如果参数里传了NAME, 会把NAME作为task_api服务的名称，以服务发现的方式获取HOST。如果服务发现未找到该服务则会使用参数里的HOST的值。
 ```
+
+
