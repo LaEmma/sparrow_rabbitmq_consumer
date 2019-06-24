@@ -1,7 +1,7 @@
 # Sparrow RabbitMQ Consumer
 
 
-##Introduction
+## Introduction
 Sparrow rabbitmq consumer is a RabbitMQ (AMQP 0-9-1) client consumer library for Python.
 
 
@@ -17,6 +17,7 @@ pass
 Here is the most simple example of use
 
 ```
+pip install sparrow_rabbitmq_consumer
 from rabbitmq_consumer import RabbitMQConsumer
 rabbitmq_config = {
     "HOST": "127.0.0.1",
@@ -28,9 +29,10 @@ rabbitmq_config = {
 }
 task_api = "http://127.0.0.1:8001/api/"
 consumer = RabbitMQConsumer(
-    "product", 
-    "celery_tasks.sparrow_products_tasks", 
-    rabbitmq_config,
+    queue="product", 
+    task_file="task_folders.sparrow_products_tasks", 
+    rabbitmq_config=rabbitmq_config,
+    update_task=True,
     task_api=task_api
 )
 consumer.consume()

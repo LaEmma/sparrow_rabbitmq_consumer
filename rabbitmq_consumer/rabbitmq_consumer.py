@@ -29,15 +29,19 @@ logger = logging.getLogger(__name__)
 
 
 class RabbitMQConsumer(object):
+    """
+    rabitmq消费者
+    """
 
     def __init__(self, queue, task_file, rabbitmq_config=None, update_task=True, task_api=None):
-        '''
+        """
+        输入参数说明：
         queue:  定义consumer所在队列
         task_file: 总任务文件的名称
         rabbitmq_config: rabbitmq链接配置。不传则使用默认
         update_task: 是否在执行完更新task数据库
         task_api: 如果需要更新task数据库，则需要传入更新接口。不传则使用默认
-        '''
+        """
         # 检查queue的定义，已经queue是否已经存在在broker中
         if not rabbitmq_config:
             rabbitmq_config = RABBITMQ_BROKER
