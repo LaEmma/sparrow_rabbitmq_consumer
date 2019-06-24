@@ -35,6 +35,6 @@ def get_service_addr(service_conf, scheme="http"):
         # 获取环境变量
         host = service_env_host
         port = service_env_port
-        print("未配置服务名称，使用参数地址。host{1},port{2}".format(host, port))
+        print("未配置服务名称，使用参数地址。host{0},port{1}".format(host, port))
     service_addr = service_addr.format(host=host, port=port)
     return service_addr
