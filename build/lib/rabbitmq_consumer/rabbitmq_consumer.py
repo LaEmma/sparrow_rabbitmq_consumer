@@ -72,7 +72,7 @@ class RabbitMQConsumer(object):
                     task_service[key] = value
             else:
                 logger.info("task_api not defined, use default api: {0}".format(task_api))
-        self._task_api = get_task_api(task_service)
+        self._task_api = self.get_task_api(task_service)
         self.rabbitmq_url(rabbitmq)
         # 检查queue的定义，已经queue是否已经存在在broker中
         if not self.validate_queue(queue):
@@ -80,9 +80,9 @@ class RabbitMQConsumer(object):
                 "queue {} is not defined in rabbitmq broker".format(queue))
         self._queue = queue
 
-    def get_task_api(task_api_config):
-        task_url = get_service_addr(TASK_SERVICE)
-        task_api = "http://{0}{1}".format(task_url, TASK_SERVICE['UPDATE_TASK_API'])
+    def get_task_api(self, task_api_config):
+        task_url = get_service_addr(task_api_config)
+        task_api = "http://{0}{1}".format(task_url, task_api_config['UPDATE_TASK_API'])
         return task_api
 
 
