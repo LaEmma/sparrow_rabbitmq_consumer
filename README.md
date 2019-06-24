@@ -11,6 +11,8 @@ Sparrow rabbitmq consumer is a RabbitMQ (AMQP 0-9-1) client consumer library for
 ## Documentation
 pass
 
+## Installation
+pip install sparrow_rabbitmq_consumer
 
 ## Example
 
