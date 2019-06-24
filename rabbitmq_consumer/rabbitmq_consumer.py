@@ -2,6 +2,7 @@
 from pika.exceptions import AMQPConnectionError as BrokerConnectonException
 from datetime import datetime
 from .rabbitmq_config import RABBITMQ_BROKER, TASK_SERVICE
+from .utils import get_service_addr
 
 import base64
 import importlib
@@ -33,25 +34,25 @@ class RabbitMQConsumer(object):
     rabitmq消费者
     """
 
-    def __init__(self, queue, task_file, rabbitmq_config=None, update_task=True, task_api=None):
+    def __init__(self, queue, task_file, rabbitmq_config=None, update_task=True, task_api_config=None):
         """
         输入参数说明：
         queue:  定义consumer所在队列
         task_file: 总任务文件的名称
         rabbitmq_config: rabbitmq链接配置。不传则使用默认
         update_task: 是否在执行完更新task数据库
-        task_api: 如果需要更新task数据库，则需要传入更新接口。不传则使用默认
+        task_api_config: 如果需要更新task数据库，则需要传入更新接口。不传则使用默认
         """
         # 检查queue的定义，已经queue是否已经存在在broker中
         if not rabbitmq_config:
-            rabbitmq_config = RABBITMQ_BROKER
+            rabbitmq = RABBITMQ_BROKER
             logger.info("rabbitmq_config not defined, use default setting: {0}".format(RABBITMQ_BROKER))
         else:
             if not isinstance(rabbitmq_config, dict):
                 raise Exception("rabbitmq_config is not type of dict")
-            rabbitmq_config = RABBITMQ_BROKER
+            rabbitmq = RABBITMQ_BROKER
             for key, value in rabbitmq_config.items():
-                rabbitmq_config[key] = value 
+                rabbitmq[key] = value 
 
         if not queue:
             raise Exception("queue is not defined")
@@ -65,23 +66,34 @@ class RabbitMQConsumer(object):
                 "cannot locate task_file: {}".format(task_file))
         self.update_task = update_task
         if self.update_task:
-            if not task_api:
-                task_api = "http://{0}:{1}{2}".format(TASK_SERVICE['HOST'], TASK_SERVICE[
-                                                      'PORT'], TASK_SERVICE['UPDATE_TASK_API'])
+            task_service = TASK_SERVICE
+            if task_api_config:
+                for key, value in task_api_config.items():
+                    task_service[key] = value
+            else:
                 logger.info("task_api not defined, use default api: {0}".format(task_api))
-        self._task_api = task_api
-        self.rabbitmq_url(rabbitmq_config)
+        self._task_api = get_task_api(task_service)
+        self.rabbitmq_url(rabbitmq)
         # 检查queue的定义，已经queue是否已经存在在broker中
         if not self.validate_queue(queue):
             raise Exception(
                 "queue {} is not defined in rabbitmq broker".format(queue))
         self._queue = queue
 
+    def get_task_api(task_api_config):
+        task_url = get_service_addr(TASK_SERVICE)
+        task_api = "http://{0}{1}".format(task_url, TASK_SERVICE['UPDATE_TASK_API'])
+        return task_api
+
+
     def rabbitmq_url(self, rabbitmq_config):
         # import pdb; pdb.set_trace()
         try:
-            addr = rabbitmq_config['HOST']
-            port = rabbitmq_config['PORT']
+            rabbitmq_url = get_service_addr(rabbitmq_config)
+            addr = rabbitmq_url.split(':')[0]
+            port = rabbitmq_url.split(':')[1]
+            # addr = rabbitmq_config['HOST']
+            # port = rabbitmq_config['PORT']
             api_port = rabbitmq_config['API_PORT']
             user = rabbitmq_config['USER']
             password = rabbitmq_config['PASSWORD']
