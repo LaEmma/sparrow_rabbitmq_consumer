@@ -47,6 +47,7 @@ class RabbitMQConsumer(object):
         if not rabbitmq_config:
             rabbitmq = RABBITMQ_BROKER
             logger.info("rabbitmq_config not defined, use default setting: {0}".format(RABBITMQ_BROKER))
+            print("rabbitmq_config not defined, use default setting: {0}".format(RABBITMQ_BROKER))
         else:
             if not isinstance(rabbitmq_config, dict):
                 raise Exception("rabbitmq_config is not type of dict")
@@ -63,7 +64,7 @@ class RabbitMQConsumer(object):
             self._task_module = importlib.import_module(task_file)
         except:
             raise Exception(
-                "cannot locate task_file: {}".format(task_file))
+                "cannot locate task_file: {0}".format(task_file))
         self.update_task = update_task
         if self.update_task:
             task_service = TASK_SERVICE
@@ -72,12 +73,13 @@ class RabbitMQConsumer(object):
                     task_service[key] = value
             else:
                 logger.info("task_api not defined, use default api: {0}".format(task_api))
+                print("task_api not defined, use default api: {0}".format(task_api))
         self._task_api = self.get_task_api(task_service)
         self.rabbitmq_url(rabbitmq)
         # 检查queue的定义，已经queue是否已经存在在broker中
         if not self.validate_queue(queue):
             raise Exception(
-                "queue {} is not defined in rabbitmq broker".format(queue))
+                "queue {0} is not defined in rabbitmq broker".format(queue))
         self._queue = queue
 
     def get_task_api(self, task_api_config):
@@ -134,7 +136,8 @@ class RabbitMQConsumer(object):
 
     def callback(self, ch, method, properties, body):
         task_id = properties.headers.get("task_id")
-        logger.info(' [*] Received task_id {}. Executing...'.format(task_id))
+        logger.info(' [*] Received task_id {0}. Executing...'.format(task_id))
+        print(' [*] Received task_id {0}. Executing...'.format(task_id))
 
         try:
             my_json = base64.b64decode(body).decode('utf8').replace("'", '"')
@@ -160,8 +163,9 @@ class RabbitMQConsumer(object):
             }
         if self.update_task:
             self.update_task_result(task_id, consumer, **kwargs)
-        logger.info(' [*] Finished task_id {}.'.format(task_id))
-        ch.basic_ack(delivery_tag=method.delivery_tag)
+        logger.info(' [*] Finished task_id {0}.'.format(task_id))
+        print(' [*] Finished task_id {0}.'.format(task_id))
+        # ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def consume(self):
         # logger.info(' [*] QUEUE({}) Waiting for messages. To exit press CTRL+C'.format(self._queue))
@@ -172,7 +176,9 @@ class RabbitMQConsumer(object):
                     pika.URLParameters(self._connection_url))
                 self._channel = connection.channel()
                 logger.info(
-                    ' [*] QUEUE({}) Waiting for messages. To exit press CTRL+C'.format(self._queue))
+                    ' [*] QUEUE({0}) Waiting for messages. To exit press CTRL+C'.format(self._queue))
+                print(
+                    ' [*] QUEUE({0}) Waiting for messages. To exit press CTRL+C'.format(self._queue))
                 self._channel.basic_qos(prefetch_count=1)
                 self._channel.basic_consume(
                     queue=self._queue,
@@ -201,6 +207,8 @@ class RabbitMQConsumer(object):
             }
             requests.post(self._task_api, data=data)
             logger.info(
+                ' [*] Update task database info task_id is {0}, status is {1}'.format(task_id, status))
+            print(
                 ' [*] Update task database info task_id is {0}, status is {1}'.format(task_id, status))
         except Exception as ex:
             raise Exception(ex.__repr__())
