@@ -44,7 +44,6 @@ task_api_config = {
 
 consumer = RabbitMQConsumer(
     queue="product", 
-    task_file="task_folders.sparrow_products_tasks", 
     rabbitmq_config=rabbitmq_config,
     update_task=True,
     task_api_config=task_api_config
@@ -53,7 +52,6 @@ consumer.consume()
 
 参数说明：
     queue: rabbitmq队列名称
-    task_file: 任务所在的python文件名称，如果文件位于文件夹中，则使用.标识 
     rabbitmq_config: rabbitmq连接设置
     update_task: True/False    任务执行结束是否更新任务结果
     task_api_config: 如果update_task为True,则在任务执行完成之后会向该设置里的url发送任务执行完成结果

@@ -34,11 +34,11 @@ class RabbitMQConsumer(object):
     rabitmq消费者
     """
 
-    def __init__(self, queue, task_file, rabbitmq_config=None, update_task=True, task_api_config=None):
+    def __init__(self, queue, rabbitmq_config=None, update_task=True, task_api_config=None):
         """
         输入参数说明：
         queue:  定义consumer所在队列
-        task_file: 总任务文件的名称
+        task_file: 总任务文件的名称(已废弃)
         rabbitmq_config: rabbitmq链接配置。不传则使用默认
         update_task: 是否在执行完更新task数据库
         task_api_config: 如果需要更新task数据库，则需要传入更新接口。不传则使用默认
@@ -58,13 +58,15 @@ class RabbitMQConsumer(object):
         if not queue:
             raise Exception("queue is not defined")
         # 检查总的task py 文件是否存在
-        if not task_file:
-            raise Exception("task_file is not defined")
-        try:
-            self._task_module = importlib.import_module(task_file)
-        except:
-            raise Exception(
-                "cannot locate task_file: {0}".format(task_file))
+        # self._task_module = None
+        # if not task_file:
+        #     raise Exception("task_file is not defined")
+        # if task_file:
+        #     try:
+        #         self._task_module = importlib.import_module(task_file)
+        #     except:
+        #         raise Exception(
+        #             "cannot locate task_file: {0}".format(task_file))
         self.update_task = update_task
         if self.update_task:
             task_service = TASK_SERVICE
@@ -138,18 +140,47 @@ class RabbitMQConsumer(object):
         task_id = properties.headers.get("task_id")
         logger.info(' [*] Received task_id {0}. Executing...'.format(task_id))
         print(' [*] Received task_id {0}. Executing...'.format(task_id))
-
+        # import pdb; pdb.set_trace()
+        consumer = None
         try:
             my_json = base64.b64decode(body).decode('utf8').replace("'", '"')
             json_data = json.loads(my_json)
             task_name = json_data.get('name')
-            task_parameter = json_data.get('parameter')
+            task_args = json_data.get('args')
+            task_kwargs = json_data.get('kwargs')
 
             consumer = method.consumer_tag
-            if task_parameter:
-                result = getattr(self._task_module, task_name)(task_parameter)
+            # if self._task_module:
+            #     if task_args and task_kwargs:
+            #         result = getattr(self._task_module, task_name)(*task_args, **task_kwargs)
+            #     elif task_args:
+            #         result = getattr(self._task_module, task_name)(*task_args)
+            #     elif task_kwargs:
+            #         result = getattr(self._task_module, task_name)(**task_kwargs)
+            #     else:
+            #         result = getattr(self._task_module, task_name)()
+            task = task_name.split(".")[-1]
+            task_module_name = task_name.replace(task, "")
+            if task_module_name:
+                task_module_name = task_module_name[:-1]
+                try:
+                    task_module = importlib.import_module(task_module_name)
+                except:
+                    raise Exception(
+                        "cannot locate task_file: {0}".format(task_module_name))
+
+                if task_args and task_kwargs:
+                    result = getattr(task_module, task)(*task_args, **task_kwargs)
+                elif task_args:
+                    result = getattr(task_module, task)(*task_args)
+                elif task_kwargs:
+                    result = getattr(task_module, task)(**task_kwargs)
+                else:
+                    result = getattr(task_module, task)()
             else:
-                result = getattr(self._task_module, task_name)()
+                raise Exception(
+                    "cannot locate task: {0}".format(task_name))
+
             kwargs = {
                 "status": "SUCCESS",
                 "result": result,
