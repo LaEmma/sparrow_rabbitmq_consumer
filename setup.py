@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="sparrow_rabbitmq_consumer",
-    version="0.0.5",
+    version="0.0.6",
     author="Hanguangbaihuo",
     author_email="chao.liu@hanguangbaihuo.cn",
     description="Sparrow rabbitmq consumer",

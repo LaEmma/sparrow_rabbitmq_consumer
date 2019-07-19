@@ -10,7 +10,10 @@ import json
 import logging
 import os
 import pika
+import time
 import requests
+import functools
+import threading
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s %(message)s',
@@ -75,7 +78,7 @@ class RabbitMQConsumer(object):
                     task_service[key] = value
             else:
                 logger.info("task_api not defined, use default api: {0}".format(task_api))
-                print("task_api not defined, use default api: {0}".format(task_api))
+                # print("task_api not defined, use default api: {0}".format(task_api))
         self._task_api = self.get_task_api(task_service)
         self.rabbitmq_url(rabbitmq)
         # 检查queue的定义，已经queue是否已经存在在broker中
@@ -120,6 +123,8 @@ class RabbitMQConsumer(object):
             raise Exception(ex)
         self._rabbitmq_user = user
         self._rabbitmq_password = password
+        self._rabbitmq_addr = addr
+        self._rabbitmq_port = port
         self._connection_url = url
         self._api_url = api_url
         self._queue_api_url = queue_api_url
@@ -136,29 +141,37 @@ class RabbitMQConsumer(object):
             return True
         return False
 
-    def callback(self, ch, method, properties, body):
-        task_id = properties.headers.get("task_id")
-        logger.info(' [*] Received task_id {0}. Executing...'.format(task_id))
-        print(' [*] Received task_id {0}. Executing...'.format(task_id))
+    def ack_message(self, channel, delivery_tag):
+        """Note that `channel` must be the same pika channel instance via which
+        the message being ACKed was retrieved (AMQP protocol constraint).
+        """
+        if channel.is_open:
+            channel.basic_ack(delivery_tag)
+        else:
+            # Channel is already closed, so we can't ACK this message;
+            logger.error('channel is closed, delivery_tag {0} cannot be ACKed'.format(delivery_tag))
+            
+    def do_work(self, connection, channel, method_frame, header_frame, body):
+        
+        thread_id = threading.get_ident()
+        delivery_tag = method_frame.delivery_tag
+        fmt1 = 'Thread id: {} Delivery tag: {} Message body: {}'
+        logger.info(fmt1.format(thread_id, delivery_tag, body))
+        # Sleeping to simulate 10 seconds of work
+        
+        task_id = header_frame.headers.get("task_id")
+        logger.info(' [*] {0} Received task_id {1}. Executing...'.format(datetime.now(), task_id))
+        print(' [*] {0} Received task_id {1}. Executing...'.format(datetime.now(), task_id))
         # import pdb; pdb.set_trace()
-        consumer = None
+        consumer = "unknown"
         try:
+            consumer = method_frame.consumer_tag
             my_json = base64.b64decode(body).decode('utf8').replace("'", '"')
             json_data = json.loads(my_json)
             task_name = json_data.get('name')
             task_args = json_data.get('args')
             task_kwargs = json_data.get('kwargs')
 
-            consumer = method.consumer_tag
-            # if self._task_module:
-            #     if task_args and task_kwargs:
-            #         result = getattr(self._task_module, task_name)(*task_args, **task_kwargs)
-            #     elif task_args:
-            #         result = getattr(self._task_module, task_name)(*task_args)
-            #     elif task_kwargs:
-            #         result = getattr(self._task_module, task_name)(**task_kwargs)
-            #     else:
-            #         result = getattr(self._task_module, task_name)()
             task = task_name.split(".")[-1]
             task_module_name = task_name.replace(task, "")
             if task_module_name:
@@ -183,7 +196,7 @@ class RabbitMQConsumer(object):
 
             kwargs = {
                 "status": "SUCCESS",
-                "result": result,
+                "result": str(result) if result else '',
                 "traceback": "",
             }
         except Exception as ex:
@@ -194,37 +207,60 @@ class RabbitMQConsumer(object):
             }
         if self.update_task:
             self.update_task_result(task_id, consumer, **kwargs)
-        logger.info(' [*] Finished task_id {0}.'.format(task_id))
-        print(' [*] Finished task_id {0}.'.format(task_id))
-        # ch.basic_ack(delivery_tag=method.delivery_tag)
+        logger.info(' [*] {0} Finished task_id {1}.'.format(datetime.now(), task_id))
+        print(' [*] {0} Finished task_id {1}.'.format(datetime.now(), task_id))
+
+        cb = functools.partial(self.ack_message, channel, delivery_tag)
+        connection.add_callback_threadsafe(cb)
+
+
+    def on_message(self, channel, method_frame, header_frame, body, args):
+        (connection, threads) = args
+        t = threading.Thread(target=self.do_work, args=(connection, channel, method_frame, header_frame, body))
+        t.start()
+        threads.append(t)
 
     def consume(self):
         # logger.info(' [*] QUEUE({}) Waiting for messages. To exit press CTRL+C'.format(self._queue))
-        # 建立连接
+        # # 建立连接
         while True:
             try:
-                connection = pika.BlockingConnection(
-                    pika.URLParameters(self._connection_url))
+                credentials = pika.PlainCredentials(self._rabbitmq_user, self._rabbitmq_password)
+                parameters = pika.ConnectionParameters(self._rabbitmq_addr,
+                                                        self._rabbitmq_port,
+                                                        '/',
+                                                        credentials,
+                                                        heartbeat=600)
+
+                connection = pika.BlockingConnection(parameters)
                 self._channel = connection.channel()
                 logger.info(
                     ' [*] QUEUE({0}) Waiting for messages. To exit press CTRL+C'.format(self._queue))
-                print(
-                    ' [*] QUEUE({0}) Waiting for messages. To exit press CTRL+C'.format(self._queue))
+                # print(
+                #     ' [*] QUEUE({0}) Waiting for messages. To exit press CTRL+C'.format(self._queue))
                 self._channel.basic_qos(prefetch_count=1)
-                self._channel.basic_consume(
-                    queue=self._queue,
-                    auto_ack=True,  # 如果设为False,任务正确执行完成之后才会ack
-                    on_message_callback=self.callback,)
+                threads = []
+                on_message_callback = functools.partial(self.on_message, args=(connection, threads))
+                self._channel.basic_consume(queue=self._queue, on_message_callback=on_message_callback)
                 self._channel.start_consuming()
+
+                for thread in threads:
+                    thread.join()
             # Don't recover if connection was closed by broker
             except pika.exceptions.ConnectionClosedByBroker:
+                self._channel.stop_consuming()
                 break
             # Don't recover on channel errors
             except pika.exceptions.AMQPChannelError:
+                self._channel.stop_consuming()
                 break
             # Recover on all other connection errors
             except BrokerConnectonException as ex:
-                raise Exception(ex.__repr__())
+                # raise Exception(ex.__repr__())
+                logger.error("broker connection error:{0}. try again later".format(ex.__repr__()))
+                time.sleep(2)
+            except KeyboardInterrupt:
+                self._channel.stop_consuming()
 
     def update_task_result(self, task_id, consumer, **kwargs):
         try:
@@ -239,7 +275,8 @@ class RabbitMQConsumer(object):
             requests.post(self._task_api, data=data)
             logger.info(
                 ' [*] Update task database info task_id is {0}, status is {1}'.format(task_id, status))
-            print(
-                ' [*] Update task database info task_id is {0}, status is {1}'.format(task_id, status))
+            # print(
+            #     ' [*] Update task database info task_id is {0}, status is {1}'.format(task_id, status))
         except Exception as ex:
             raise Exception(ex.__repr__())
+
