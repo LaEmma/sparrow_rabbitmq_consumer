@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import consul
-
 from .rabbitmq_config import *
+
 
 def get_service_addr(service_conf, scheme="http"):
     """
@@ -13,7 +13,7 @@ def get_service_addr(service_conf, scheme="http"):
     service_env_host = service_conf['HOST']
     service_env_port = service_conf['PORT']
     service_name = service_conf['NAME']
-    
+
     if service_name:
         # 使用 consul 服务发现
         consul_client_addr = CONSUL_ADDR
