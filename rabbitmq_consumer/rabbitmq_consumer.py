@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 from pika.exceptions import AMQPConnectionError as BrokerConnectonException
 from datetime import datetime
-from .rabbitmq_config import RABBITMQ_BROKER, TASK_SERVICE
-from .utils import get_service_addr
 
 import base64
 import importlib
@@ -38,99 +36,30 @@ class RabbitMQConsumer(object):
     rabitmq消费者
     """
 
-    def __init__(self, queue, rabbitmq_config=None, update_task=True, task_service_config=None):
+    def __init__(self, queue, message_broker, message_backend=None):
         """
         输入参数说明：
         queue:  定义consumer所在队列
-        rabbitmq_config: rabbitmq链接配置。不传则使用默认
-        update_task: 是否在执行完更新task数据库
-        task_service_config: 如果需要更新task数据库，则需要传入更新接口。不传则使用默认
+        message_broker: rabbitmq连接设置
+        message_backend: 选填的配置，如果设置了message_backend,则在任务执行完成之后会向该设置里的url发送任务执行完成结果
         """
         # 检查queue的定义，已经queue是否已经存在在broker中
-        rabbitmq = RABBITMQ_BROKER
-        if not rabbitmq_config:
-            logger.info("rabbitmq_config not defined, use default setting: {0}".format(
-                RABBITMQ_BROKER))
-        else:
-            if not isinstance(rabbitmq_config, dict):
-                raise Exception("rabbitmq_config is not type of dict")
-            for key, value in rabbitmq_config.items():
-                rabbitmq[key] = value
-
+        
+        if not message_broker:
+            raise Exception("message_broker not defined")
+        self._message_broker = message_broker
+    
         if not queue:
             raise Exception("queue is not defined")
-        self.update_task = update_task
-        if self.update_task:
-            task_service = TASK_SERVICE
-            if task_service_config:
-                for key, value in task_service_config.items():
-                    task_service[key] = value
-            else:
-                logger.info(
-                    "task_service_config not defined, use default config: {0}".format(task_service_config))
-            self._task_api = self.get_task_api(task_service)
-        else:
-            self._task_api = None
-        self.rabbitmq_url(rabbitmq)
-        # 检查queue的定义，已经queue是否已经存在在broker中
-        if not self.validate_queue(queue):
-            raise Exception(
-                "queue {0} is not defined in rabbitmq broker".format(queue))
         self._queue = queue
+
+        if message_backend:
+            logger.info("message result will be updated to {}".format(message_backend))
+        self._message_backend = message_backend
+
         # 最终执行任务的函数
         self._target_func_map = None
-
-    def get_task_api(self, task_service_config):
-        task_url = get_service_addr(task_service_config)
-        task_api = "http://{0}{1}".format(task_url,
-                                          task_service_config['UPDATE_TASK_API'])
-        return task_api
-
-    def rabbitmq_url(self, rabbitmq_config):
-        # import pdb; pdb.set_trace()
-        try:
-            rabbitmq_url = get_service_addr(rabbitmq_config)
-            addr = rabbitmq_url.split(':')[0]
-            port = rabbitmq_url.split(':')[1]
-            api_port = rabbitmq_config['API_PORT']
-            user = rabbitmq_config['USER']
-            password = rabbitmq_config['PASSWORD']
-            vhost = rabbitmq_config.get('VHOST')
-            if vhost:
-                url = 'amqp://{user}:{password}@{addr}:{port}/{vhost}'.format(
-                    user=user, password=password, addr=addr, port=port, vhost=vhost)
-                api_url = 'http://{addr}:{port}/api/'.format(
-                    addr=addr, port=api_port, vhost=vhost)
-                queue_api_url = 'http://{addr}:{port}/api/queues/{vhost}'.format(
-                    addr=addr, port=api_port, vhost=vhost)
-            else:
-                url = 'amqp://{user}:{password}@{addr}:{port}'.format(
-                    user=user, password=password, port=port, addr=addr)
-                api_url = 'http://{addr}:{port}/api'.format(
-                    addr=addr, port=api_port)
-                queue_api_url = 'http://{addr}:{port}/api/queues'.format(
-                    addr=addr, port=api_port)
-        except Exception as ex:
-            raise Exception(ex)
-        self._rabbitmq_user = user
-        self._rabbitmq_password = password
-        self._rabbitmq_addr = addr
-        self._rabbitmq_port = port
-        self._connection_url = url
-        self._api_url = api_url
-        self._queue_api_url = queue_api_url
-
-    def validate_queue(self, queue):
-        api_url = self._queue_api_url
-        response = requests.get(api_url, auth=(
-            self._rabbitmq_user, self._rabbitmq_password))
-        if response.status_code != 200:
-            return False
-
-        available_queues = [queue['name'] for queue in response.json()]
-        if queue in available_queues:
-            return True
-        return False
+        self._channel = None
 
     @functools.lru_cache(maxsize=None)
     def get_target_func(self, func_name):
@@ -138,9 +67,10 @@ class RabbitMQConsumer(object):
         try:
             module_path, cls_name = func_name.rsplit(".", 1)
             func = getattr(importlib.import_module(module_path), cls_name)
-        except:
-            raise Exception(
-                "模块{}路径错误或者不存在".format(func_name))
+        except Exception as ex:
+            error = "error happened when setting target_func_map, {}".format(ex.__str__())
+            logger.error(error)
+            raise Exception(error)
         return func
 
     def _get_target_func_map(self):
@@ -203,7 +133,7 @@ class RabbitMQConsumer(object):
                 "result": "",
                 "traceback": ex.__str__()
             }
-        if self.update_task:
+        if self._message_backend:
             self.update_task_result(task_id, consumer, **kwargs)
         logger.info(
             ' [*] {0} Finished task_id {1}.'.format(datetime.now(), task_id))
@@ -223,14 +153,8 @@ class RabbitMQConsumer(object):
         # # 建立连接
         while True:
             try:
-                credentials = pika.PlainCredentials(
-                    self._rabbitmq_user, self._rabbitmq_password)
-                parameters = pika.ConnectionParameters(self._rabbitmq_addr,
-                                                       self._rabbitmq_port,
-                                                       '/',
-                                                       credentials,
-                                                       heartbeat=600)
-
+                # import pdb; pdb.set_trace()
+                parameters = pika.URLParameters("{0}?{1}".format(self._message_broker, "heartbeat=600"))
                 connection = pika.BlockingConnection(parameters)
                 self._channel = connection.channel()
                 logger.info(
@@ -247,11 +171,13 @@ class RabbitMQConsumer(object):
                     thread.join()
             # Don't recover if connection was closed by broker
             except pika.exceptions.ConnectionClosedByBroker:
-                self._channel.stop_consuming()
+                if self._channel:
+                    self._channel.stop_consuming()
                 break
             # Don't recover on channel errors
             except pika.exceptions.AMQPChannelError:
-                self._channel.stop_consuming()
+                if self._channel:
+                    self._channel.stop_consuming()
                 break
             # Recover on all other connection errors
             except BrokerConnectonException as ex:
@@ -260,7 +186,12 @@ class RabbitMQConsumer(object):
                     "broker connection error:{0}. try again later".format(ex.__repr__()))
                 time.sleep(2)
             except KeyboardInterrupt:
-                self._channel.stop_consuming()
+                if self._channel:
+                    self._channel.stop_consuming()
+                break
+            except Exception as ex:
+                logger.error(ex.__str__())
+                break
 
     def update_task_result(self, task_id, consumer, **kwargs):
         try:
@@ -272,7 +203,7 @@ class RabbitMQConsumer(object):
                 "result": kwargs.get('result'),
                 "traceback": kwargs.get('traceback'),
             }
-            requests.post(self._task_api, data=data)
+            requests.post(self._message_backend, data=data)
             logger.info(
                 ' [*] Update task database info task_id is {0}, status is {1}'.format(task_id, status))
         except Exception as ex:

@@ -1,7 +1,6 @@
 README.md
 setup.py
 rabbitmq_consumer/__init__.py
-rabbitmq_consumer/rabbitmq_config.py
 rabbitmq_consumer/rabbitmq_consumer.py
 rabbitmq_consumer/utils.py
 sparrow_rabbitmq_consumer.egg-info/PKG-INFO
