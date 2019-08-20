@@ -8,6 +8,7 @@ import base64
 import importlib
 import json
 import logging
+import os
 import pika
 import time
 import requests
@@ -177,12 +178,19 @@ class RabbitMQConsumer(object):
 
         consumer = "unknown"
         try:
+            # import pdb; pdb.set_trace()
             consumer = method_frame.consumer_tag
             my_json = base64.b64decode(body).decode('utf8').replace("'", '"')
             json_data = json.loads(my_json)
             task_name = json_data.get('name')
             task_args = json_data.get('args')
             task_kwargs = json_data.get('kwargs')
+            # 设定父任务环境变量，以防下次发送子任务的时候需要用到
+            parent_options = {
+                "id": task_id,
+                "code": task_name
+            }
+            os.environ["SPARROW_TASK_PARENT_OPTIONS"] = str(parent_options)
             result = self.get_target_func(self.target_func_map[task_name])(*task_args, **task_kwargs)
             kwargs = {
                 "status": "SUCCESS",

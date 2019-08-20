@@ -3,7 +3,7 @@ import os
 
 # consul 地址
 CONSUL_ADDR = {
-    "HOST": os.environ.get("CONSUL_HOST", "127.0.0.1"),
+    "HOST": os.environ.get("CONSUL_IP", "127.0.0.1"),
     "PORT": os.environ.get("CONSUL_PORT", "8500")
 }
 
@@ -17,7 +17,7 @@ RABBITMQ_BROKER = {
     "VHOST": os.environ.get("RABBITMQ_SERVICE_VHOST", None),
 }
 
-TASK_SERVICE ={
+TASK_SERVICE = {
     "NAME": os.environ.get("TASK_SERVICE", None),
     "HOST": os.environ.get("TASK_SERVICE_HOST", "127.0.0.1"),
     "PORT": os.environ.get("TASK_SERVICE_PORT", "8001"),
